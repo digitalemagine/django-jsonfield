@@ -12,6 +12,11 @@ try:
 except ImportError:
     from django.utils import simplejson as json
 
+try:
+    from psycopg2.extras import Json
+except:
+    Json = json.dumps
+
 from django.forms import fields
 try:
     from django.forms.utils import ValidationError
@@ -145,8 +150,35 @@ class JSONFieldBase(six.with_metaclass(SubfieldBase, models.Field)):
         else:
             return super(JSONFieldBase, self).db_type(connection)
 
+class JSONBField(JSONFieldBase, models.TextField):
+    """JSONBField is a pure postgresql jsonb field that
+    serializes/deserializes JSON objects"""
+    form_class = JSONFormField
+
+    def dumps_for_display(self, value):
+        kwargs = { "indent": 2 }
+        kwargs.update(self.dump_kwargs)
+        return json.dumps(value, **kwargs)
+
+    def get_db_prep_value(self, value, connection, prepared=False):
+        """Convert JSON object to a string"""
+        if self.null and value is None:
+            return None
+        # There's a specific Json function in psycopg that should be used instead
+        # but I don't know how to pass the additional parameters and I don't have
+        # any different dumper in any case
+        # return Json(value, dumps=json.dumps)
+        return json.dumps(value, **self.dump_kwargs)
+
+    def db_type(self, connection):
+        if connection.vendor == 'postgresql' and connection.pg_version >= 90400:
+            return 'jsonb'
+        else:
+            return super(JSONFieldBase, self).db_type(connection)
+
 class JSONField(JSONFieldBase, models.TextField):
-    """JSONField is a generic textfield that serializes/deserializes JSON objects"""
+    """JSONField is a native json field on PGSQL v>9.3, or a generic textfield
+    otherwise, that serializes/deserializes JSON objects"""
     form_class = JSONFormField
 
     def dumps_for_display(self, value):
@@ -158,8 +190,14 @@ class JSONField(JSONFieldBase, models.TextField):
 class JSONCharField(JSONFieldBase, models.CharField):
     """JSONCharField is a generic textfield that serializes/deserializes JSON objects,
     stored in the database like a CharField, which enables it to be used
-    e.g. in unique keys"""
+    e.g. in unique keys
+    This NEVER uses postgresql native json/jsonb types
+    """
     form_class = JSONCharFormField
+
+    def db_type(self, connection):
+
+        return super(JSONFieldBase, self).db_type(connection)
 
 
 try:

@@ -6,3 +6,5 @@ MANIFEST
 .pydevproject
 .DS_Store
 .idea/*
+*.egg-info/
+/nbproject/
